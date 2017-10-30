@@ -43,6 +43,7 @@ Possible improvements:
 import os
 import subprocess
 import shutil
+import stat
 import glob
 import re
 import sys
@@ -76,6 +77,35 @@ def print_debug(*args):
         print(arg)
 
 
+def copy_file_tree(src, dst, symlinks = False, ignore = None):
+    """
+    Replacement for shutil.copytree. Copies entire directory trees and merges dirs with the same name together
+    """
+    if not os.path.exists(dst):
+        os.makedirs(dst)
+        shutil.copystat(src, dst)
+        lst = os.listdir(src)
+    if ignore:
+        excl = ignore(src, lst)
+        lst = [x for x in lst if x not in excl]
+    for item in lst:
+        s = os.path.join(src, item)
+        d = os.path.join(dst, item)
+        if symlinks and os.path.islink(s):
+        if os.path.lexists(d):
+            os.remove(d)
+            os.symlink(os.readlink(s), d)
+        try:
+            st = os.lstat(s)
+            mode = stat.S_IMODE(st.st_mode)
+            os.lchmod(d, mode)
+        except:
+            pass # lchmod not available
+        elif os.path.isdir(s):
+            copytree(s, d, symlinks, ignore)
+        else:
+            shutil.copy2(s, d)
+
 # Script
 path = get_shell_args()
 if not os.path.isdir(path):
@@ -95,6 +125,20 @@ if not modules:
 print('{!s} Modules found: {!s}'.format(len(modules.keys()), modules.keys()))
 
 
+def find_course_files(course_folder):
+    """
+    Finds .md files and folders named img using glob
+    Returns two lists: markdown_files and img_folders
+    """
+    course_pattern = os.path.join(course_folder, '**/*.md')
+    img_pattern = os.path.join(course_folder, '**/img')
+
+    markdown_files = glob.glob(course_pattern)
+    img_folders = glob.glob(img_pattern)
+
+    return markdown_files, img_folders
+
+
 file_paths = {}
 COURSE, TO_COPY = 'course', 'copy'
 for module_name in modules.keys():
@@ -104,15 +148,15 @@ for module_name in modules.keys():
     }
     course_folder_path = os.path.join(modules[module_name], COURSE_FOLDER)
     exercise_folder_path = os.path.join(modules[module_name], EXERCISE_FOLDER)
-    if os.path.exists(course_folder_path):
-        glob_pattern = os.path.join(course_folder_path, '**/*.md')
-        file_paths[module_name][COURSE].extend(glob.glob(glob_pattern))
-    if os.path.exists(exercise_folder_path):
-        glob_pattern = os.path.join(exercise_folder_path, '**/*.md')
-        file_paths[module_name][COURSE].extend(glob.glob(glob_pattern))
+
+    for folder in [course_folder_path, exercise_folder_path]:
+        if os.path.exists(folder):
+            md_files, img_folders = find_course_files(folder)
+            file_paths[module_name][COURSE].extend(md_files)
+            file_paths[module_name][TO_COPY].extend(img_folders)
+
     print_debug('\n', course_folder_path, exercise_folder_path)
     print_debug('\n', file_paths[module_name])
-
 
 
 folders_to_create = []
@@ -123,17 +167,18 @@ for module_name in modules.keys():
     markdown_files = file_paths[module_name][COURSE]
     if not markdown_files:
         continue
-
     module_dist_path = os.path.join(dist_folder, module_name)
     course_folder_path = os.path.join(module_dist_path, COURSE)
     folders_to_create.append(course_folder_path)
-
     for f in markdown_files:
         folder_path, file_name = os.path.split(f)
         name = os.path.splitext(file_name)[0]
         export_file_name = name + '.html'
         dist_path = os.path.join(course_folder_path, export_file_name)
         pandoc_build_commands.append(['pandoc', f, '-t', 'html5', '--css', css_file_name, '-o', dist_path])
+    for folder_path in file_paths[module_name][TO_COPY]:
+        print_debug(folder_path)
+        copy_file_tree(folder_path, os.path.join(course_folder_path, 'img'))
 print_debug(pandoc_build_commands[0])
 
 # Create folders
