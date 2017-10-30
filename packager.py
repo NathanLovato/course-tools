@@ -78,13 +78,10 @@ def print_debug(*args):
 
 
 def copy_file_tree(src, dst, symlinks = False, ignore = None):
-    """
-    Replacement for shutil.copytree. Copies entire directory trees and merges dirs with the same name together
-    """
     if not os.path.exists(dst):
         os.makedirs(dst)
         shutil.copystat(src, dst)
-        lst = os.listdir(src)
+    lst = os.listdir(src)
     if ignore:
         excl = ignore(src, lst)
         lst = [x for x in lst if x not in excl]
@@ -92,17 +89,17 @@ def copy_file_tree(src, dst, symlinks = False, ignore = None):
         s = os.path.join(src, item)
         d = os.path.join(dst, item)
         if symlinks and os.path.islink(s):
-        if os.path.lexists(d):
-            os.remove(d)
+            if os.path.lexists(d):
+                os.remove(d)
             os.symlink(os.readlink(s), d)
-        try:
-            st = os.lstat(s)
-            mode = stat.S_IMODE(st.st_mode)
-            os.lchmod(d, mode)
-        except:
-            pass # lchmod not available
+            try:
+                st = os.lstat(s)
+                mode = stat.S_IMODE(st.st_mode)
+                os.lchmod(d, mode)
+            except:
+                pass # lchmod not available
         elif os.path.isdir(s):
-            copytree(s, d, symlinks, ignore)
+            copy_file_tree(s, d, symlinks, ignore)
         else:
             shutil.copy2(s, d)
 
@@ -123,6 +120,7 @@ if not modules:
     print('The folder is empty, Packager will now exit')
     sys.exit()
 print('{!s} Modules found: {!s}'.format(len(modules.keys()), modules.keys()))
+
 
 
 def find_course_files(course_folder):
