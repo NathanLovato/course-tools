@@ -56,7 +56,7 @@ DEMO_FOLDER = 'demo'
 
 debug = True
 
-# Script
+# Methods
 def get_shell_path():
     """
     Returns the course folder path to package
@@ -73,6 +73,7 @@ def print_debug(*args):
         print(arg)
 
 
+# Script
 path = get_shell_path()
 if not os.path.isdir(path):
     path = os.path.abspath('.')
@@ -89,20 +90,34 @@ if not modules:
 print('{!s} Modules found: {!s}'.format(len(modules.keys()), modules.keys()))
 
 
-markdown_files = []
-files_to_copy = []
-for module in modules.values():
-    course_folder_path = os.path.join(module, COURSE_FOLDER)
-    exercise_folder_path = os.path.join(module, EXERCISE_FOLDER)
+file_paths = {}
+COURSE, TO_COPY = 'course', 'copy'
+for module_name in modules.keys():
+    file_paths[module_name]  = {
+        COURSE: [],
+        TO_COPY: []
+    }
+    course_folder_path = os.path.join(modules[module_name], COURSE_FOLDER)
+    exercise_folder_path = os.path.join(modules[module_name], EXERCISE_FOLDER)
     if os.path.exists(course_folder_path):
         glob_pattern = os.path.join(course_folder_path, '**/*.md')
-        markdown_files.extend(glob.glob(glob_pattern))
+        file_paths[module_name][COURSE].extend(glob.glob(glob_pattern))
     if os.path.exists(exercise_folder_path):
         glob_pattern = os.path.join(exercise_folder_path, '**/*.md')
-        markdown_files.extend(glob.glob(glob_pattern))
-    print_debug(course_folder_path, exercise_folder_path)
-for f in markdown_files:
-    print_debug(f)
+        file_paths[module_name][COURSE].extend(glob.glob(glob_pattern))
+    print_debug('\n', course_folder_path, exercise_folder_path)
+    print_debug('\n', file_paths[module_name])
+
+
+# dist_folder = os.path.join(path, '_dist')
+# if not os.path.exists(dist_folder):
+#     os.mkdir(dist_folder)
+
+# build markdown as html
+# for f in markdown_files:
+#     head, file_name = os.path.split(f)
+
+
 
 
 # use os.path.split() on filepaths to find if their parent folder is a given folder or not?
