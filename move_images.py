@@ -25,31 +25,31 @@ markdown_files = []
 for path in path_list:
     if os.path.isdir(path):
         wildcard = os.path.join(path, '*.md')
-        markdown_files.append(glob.glob(wildcard))
+        markdown_files.extend(glob.glob(wildcard))
     elif path.lower().endswith('.md'):
         markdown_files.append(path)
 if not markdown_files:
     print("No markdown files found, stopping the script")
     sys.exit()
 
-
 # Regex replace ![](foo.png) with ![](img/foo.png) and list img files to move
 RE_IMAGE = r'^\!\[(.*)\]\((?!img/)(.+)\)'
 image_files_to_move = []
+lines_changed = []
 for f in markdown_files:
     folder, _ = os.path.split(f)
     for line in fileinput.input(files=(f), inplace=1, backup='.bak'):
         match = re.match(RE_IMAGE, line)
         if match:
-            image_files_to_move.append(folder, match.group(2))
+            image_files_to_move.append(os.path.join(folder, match.group(2)))
             line = match.expand(r'![\1](img/\2)')
-        print(line)
-
+            lines_changed.append(line)
+        print(line.rstrip())
 
 # Move image files
 for f in image_files_to_move:
     folder, file_name = os.path.split(f)
-    image_folder = os.path.join(folder, 'img')
+    image_folder = os.path.join(folder, './img')
     if not os.path.exists(image_folder):
         os.mkdir(image_folder)
     os.rename(f, os.path.join(image_folder, file_name))
