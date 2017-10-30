@@ -41,6 +41,8 @@ Possible improvements:
 """
 
 import os
+import subprocess
+import shutil
 import glob
 import re
 import sys
@@ -56,8 +58,9 @@ DEMO_FOLDER = 'demo'
 
 debug = True
 
+
 # Methods
-def get_shell_path():
+def get_shell_args():
     """
     Returns the course folder path to package
     """
@@ -74,13 +77,15 @@ def print_debug(*args):
 
 
 # Script
-path = get_shell_path()
+path = get_shell_args()
 if not os.path.isdir(path):
     path = os.path.abspath('.')
 if not os.path.isdir(path):
     print('Please provide the script with a folder')
     sys.exit()
 
+css_file_name = 'pandoc.css'
+css_file_path = os.path.join(path, css_file_name)
 # Find modules, dict with the form { name: abspath }
 modules = { folder:os.path.join(path, folder) for folder in os.listdir(path) \
             if not re.match(RE_IGNORED_FOLDERS, folder) and os.path.isdir(os.path.join(path,folder)) }
@@ -109,14 +114,36 @@ for module_name in modules.keys():
     print_debug('\n', file_paths[module_name])
 
 
-# dist_folder = os.path.join(path, '_dist')
-# if not os.path.exists(dist_folder):
-#     os.mkdir(dist_folder)
 
-# build markdown as html
-# for f in markdown_files:
-#     head, file_name = os.path.split(f)
+folders_to_create = []
+dist_folder = os.path.join(path, '_dist')
+# Prepare build and move commands
+pandoc_build_commands = []
+for module_name in modules.keys():
+    markdown_files = file_paths[module_name][COURSE]
+    if not markdown_files:
+        continue
 
+    module_dist_path = os.path.join(dist_folder, module_name)
+    course_folder_path = os.path.join(module_dist_path, COURSE)
+    folders_to_create.append(course_folder_path)
+
+    for f in markdown_files:
+        folder_path, file_name = os.path.split(f)
+        name = os.path.splitext(file_name)[0]
+        export_file_name = name + '.html'
+        dist_path = os.path.join(course_folder_path, export_file_name)
+        pandoc_build_commands.append(['pandoc', f, '-t', 'html5', '--css', css_file_name, '-o', dist_path])
+print_debug(pandoc_build_commands[0])
+
+# Create folders
+for folder_path in folders_to_create:
+    if not os.path.exists(folder_path):
+        os.makedirs(folder_path)
+    shutil.copy(css_file_path, folder_path)
+
+for command in pandoc_build_commands:
+    subprocess.run(command)
 
 
 
