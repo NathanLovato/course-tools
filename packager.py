@@ -1,43 +1,11 @@
 """
 Collects, builds and packages all files for the course
 
-Architecture
-Each folder in the main course folder is a chapter, except for ignored folders
-Each series, chapter or module should be in its own folder. Packager uses the folder's name to log changes in the changelog
-
-In each chapter the script walks the folder tree and reproduces it in the dist folder. But it builds and merges subfolders along the way.
-
-Take a course folder. You'll likely have a subfolder for each video project, documents, etc. In each folder you may have a source markdown file, a mix of videos and images.
-
-```
-- chapter-1/
--- course/
---- 1.introduction/
----- intro.md
----- img/
---- 2.programming-basics/
----- programming-basics.md
----- img/
---- 3.code-your-first-game/
-```
-
-Packager builds them so they stay organized and are convenient for the students to read:
-
-```
-- chapter-1
--- course
---- 1.introduction.html
---- 2.programming-basics.html
---- 3.code-your-first-game.html
---- img/
-```
-
-Ignored folders
-Packager skips all folders named "src", "_src", "temp", "_temp", "old", "_old". It's case insensitive
-
-
 Possible improvements:
 - add a .packagerignore file with names to ignore. One global next to the script, one at the project's root
+- debug log: add an enum of stages, and allow to print messages only for a given list of steps. E.g. only pandoc commands etc.
+- debug: allow stopping execution at a given stage
+- build and debug: allow to only process a given chapter
 """
 
 import os
@@ -50,7 +18,7 @@ import sys
 
 
 # Settings
-RE_IGNORED_FOLDERS = r'^_?(src|temp|old|dist|template)$'
+RE_IGNORED_FOLDERS = r'^_?(src|draft|temp|old|dist|template|.+\.lnk)$'
 re.IGNORECASE = True
 
 COURSE_FOLDER = 'course'
@@ -58,6 +26,8 @@ EXERCISE_FOLDER = 'exercises'
 DEMO_FOLDER = 'demo'
 
 debug = True
+debug_processed_chapters = 0
+debug_chapters_process_count = 1
 
 
 # Methods
@@ -122,61 +92,76 @@ if not modules:
 print('{!s} Modules found: {!s}'.format(len(modules.keys()), modules.keys()))
 
 
-
-def find_course_files(course_folder):
+def find_course_files(path):
     """
-    Finds .md files and folders named img using glob
+    Finds .md files and folders img using glob
     Returns two lists: markdown_files and img_folders
     """
-    course_pattern = os.path.join(course_folder, '**/*.md')
-    img_pattern = os.path.join(course_folder, '**/img')
+    markdown_files, img_folders, other_files = [], [], []
+    for dirpath, dirnames, filenames in os.walk(path):
+        # skip ignored folders
+        current_folder = os.path.split(dirpath)[1]
+        if re.match(RE_IGNORED_FOLDERS, current_folder):
+            dirnames[:] = [d for d in dirnames if not re.match(RE_IGNORED_FOLDERS, d)]
+            print_debug(dirnames)
+            continue
+        img_folders.extend([os.path.join(dirpath, folder) for folder in dirnames if folder == 'img'])
+        markdown_files.extend([os.path.join(dirpath, f) for f in filenames if f.endswith('.md')])
+        print(markdown_files)
+        other_files.extend([os.path.join(dirpath, folder) for folder in dirnames if not re.match(RE_IGNORED_FOLDERS, folder) == 'img'])
 
-    markdown_files = glob.glob(course_pattern)
-    img_folders = glob.glob(img_pattern)
-
-    return markdown_files, img_folders
+    return markdown_files, img_folders, other_files
 
 
+# Find all markdown files to build and folders to copy to _dist
 file_paths = {}
-COURSE, TO_COPY = 'course', 'copy'
+MARKDOWN_FILES, FOLDERS_TO_COPY = 'markdown', 'to_copy'
 for module_name in modules.keys():
-    file_paths[module_name]  = {
-        COURSE: [],
-        TO_COPY: []
-    }
-    course_folder_path = os.path.join(modules[module_name], COURSE_FOLDER)
-    exercise_folder_path = os.path.join(modules[module_name], EXERCISE_FOLDER)
+    file_paths[module_name] = {}
+    module_path = modules[module_name]
+    for folder in os.listdir(module_path):
+        if re.match(RE_IGNORED_FOLDERS, folder):
+            continue
+        file_paths[module_name][folder] = {}
+        md_files, img_folders, other_files = find_course_files(os.path.join(module_path, folder))
+        file_paths[module_name][folder][MARKDOWN_FILES] = md_files
+        file_paths[module_name][folder][FOLDERS_TO_COPY] = img_folders
 
-    for folder in [course_folder_path, exercise_folder_path]:
-        if os.path.exists(folder):
-            md_files, img_folders = find_course_files(folder)
-            file_paths[module_name][COURSE].extend(md_files)
-            file_paths[module_name][TO_COPY].extend(img_folders)
-
-    print_debug('\n', course_folder_path, exercise_folder_path)
+    print_debug('\n', folder)
     print_debug('\n', file_paths[module_name])
+    if debug:
+        debug_processed_chapters += 1
+        if debug_processed_chapters >= debug_chapters_process_count:
+            break
 
 
+# BUILD AND MOVE FILES WITH PANDOC
+# Go down modules, then folders, and in each folder there's MARKDOWN_FILES
 folders_to_create = []
 dist_folder = os.path.join(path, '_dist')
-# Prepare build and move commands
 pandoc_build_commands = []
-for module_name in modules.keys():
-    markdown_files = file_paths[module_name][COURSE]
-    if not markdown_files:
-        continue
+
+for module_name in file_paths.keys():
     module_dist_path = os.path.join(dist_folder, module_name)
-    course_folder_path = os.path.join(module_dist_path, COURSE)
-    folders_to_create.append(course_folder_path)
-    for f in markdown_files:
-        folder_path, file_name = os.path.split(f)
-        name = os.path.splitext(file_name)[0]
-        export_file_name = name + '.html'
-        dist_path = os.path.join(course_folder_path, export_file_name)
-        pandoc_build_commands.append(['pandoc', f, '-t', 'html5', '--css', css_file_name, '-o', dist_path])
-    for folder_path in file_paths[module_name][TO_COPY]:
-        print_debug(folder_path)
-        copy_file_tree(folder_path, os.path.join(course_folder_path, 'img'))
+
+    for folder in file_paths[module_name].keys():
+        folder_path = os.path.join(module_dist_path, folder)
+        folders_to_create.append(folder_path)
+
+        markdown_files = file_paths[module_name][folder][MARKDOWN_FILES]
+        for f in markdown_files:
+            markdown_folder_path, file_name = os.path.split(f)
+            name = os.path.splitext(file_name)[0]
+            export_file_name = name + '.html'
+
+            dist_path = os.path.join(folder_path, export_file_name)
+            pandoc_build_commands.append(['pandoc', f, '-t', 'html5', '--css', css_file_name, '-o', dist_path])
+
+        to_copy = file_paths[module_name][folder][FOLDERS_TO_COPY]
+        for copy_file_path in to_copy:
+            copy_file_tree(copy_file_path, os.path.join(module_dist_path, 'course', 'img'))
+            print_debug(copy_file_path)
+
 print_debug(pandoc_build_commands[0])
 
 # Create folders
@@ -187,7 +172,6 @@ for folder_path in folders_to_create:
 
 for command in pandoc_build_commands:
     subprocess.run(command)
-
 
 
 # use os.path.split() on filepaths to find if their parent folder is a given folder or not?
