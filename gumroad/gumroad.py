@@ -92,6 +92,7 @@ def get_cli_arguments():
     # Options
     parser.add_argument('-c', '--csv', type=str, default='', help='csv file to pull data from. One id or coupon per line')
     parser.add_argument('-at', '--access_token', type=str, default='', help='Gumroad API access_token. You can find it in your account settings on gumroad.com')
+    parser.add_argument('-cc', '--coupon_codes', nargs='+', help='One or more coupon codes to create. Separate them with spaces, e.g. coupon_one coupon_two')
     parser.add_argument('-pi', '--product_id', type=str, default='', help='The id or the name of the product you want to work on.')
 
     args = parser.parse_args()
@@ -177,20 +178,33 @@ def get_csv_file_as_list(path, header=False):
     return
 
 
-def batch_create_coupons(coupon_codes, product_id):
-    total_lines = len(coupon_codes)
+def batch_create_coupons(codes_list, product_id):
+    """
+    Take a list of coupon codes and sends post requests to create them on the Gumroad API,
+    for the given product_id
+    Returns two lists:
+    - created_codes, the coupons that were successfully created
+    - errors, a list of coupons that couldn't be created
+    """
+    total_lines = len(codes_list)
     current_progress = 0
 
-    # Generate new coupons
-    for line in coupon_codes:
+    created_codes, errors = [], []
+    for line in codes_list:
         if line == '':
             continue
         url, data = create_coupon_request(product_id, line, '100')
         r = requests.post(url, data)
+        if r.ok:
+            created_codes.append(line)
+        else:
+            errors.append(line)
+
         current_progress += 1
         print("\rProgress: {!s}/{!s}".format(current_progress, total_lines),
             end="",
             flush=True)
+    return codes_list
 
 
 
@@ -235,12 +249,14 @@ if mode is Modes.POST:
 
 
 if mode is Modes.POST and option is GumroadOptions.COUPONS:
-    if not os.path.exists(args.csv):
-        print('Could not find the csv file')
-        sys.exit()
-
-    csv_data = get_csv_file_as_list(args.csv)
-    batch_create_coupons(csv_data, product_id)
+    if args.csv:
+        if not os.path.exists(args.csv):
+            print('Could not find the csv file: the path does not exist. Operation aborted.')
+            sys.exit()
+        csv_data = get_csv_file_as_list(args.csv)
+        batch_create_coupons(csv_data, product_id)
+    if args.coupon_codes:
+        batch_create_coupons(args.coupon_codes, product_id)
 
 if mode is Modes.GET and option is GumroadOptions.PRODUCTS:
     products, total_count = download_products_data()
