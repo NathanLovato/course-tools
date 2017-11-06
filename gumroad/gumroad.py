@@ -93,7 +93,7 @@ def get_cli_arguments():
     parser.add_argument('-c', '--csv', type=str, default='', help='csv file to pull data from. One id or coupon per line')
     parser.add_argument('-at', '--access_token', type=str, default='', help='Gumroad API access_token. You can find it in your account settings on gumroad.com')
     parser.add_argument('-cc', '--coupon_codes', nargs='+', help='One or more coupon codes to create. Separate them with spaces, e.g. coupon_one coupon_two')
-    parser.add_argument('-pi', '--product_id', type=str, default='', help='The id or the name of the product you want to work on.')
+    parser.add_argument('-ids', '--product_ids', type=str, default='', help='The id or the name of the product you want to work on.')
 
     args = parser.parse_args()
     mode = [member for member in Modes if args.mode == member.value][0]
@@ -225,10 +225,13 @@ def get_product_product_ids(ids):
     Searches the product in the list by id or by name
     Returns None if it can't find the product
     """
+    if type(ids) is str:
+        ids = [ids]
+
     product_ids = []
     for product in products:
         for string in ids:
-            if string.strip() == product['name'] or string == product['id']:
+            if string.rstrip() == product['name'] or string == product['id']:
                 product_ids.append(product['id'])
     return product_ids if product_ids else None
 
