@@ -93,7 +93,8 @@ def get_cli_arguments():
     parser.add_argument('-c', '--csv', type=str, default='', help='csv file to pull data from. One id or coupon per line')
     parser.add_argument('-at', '--access_token', type=str, default='', help='Gumroad API access_token. You can find it in your account settings on gumroad.com')
     parser.add_argument('-cc', '--coupon_codes', nargs='+', help='One or more coupon codes to create. Separate them with spaces, e.g. coupon_one coupon_two')
-    parser.add_argument('-ids', '--product_ids', type=str, default='', help='The id or the name of the product you want to work on.')
+    parser.add_argument('-ids', '--product_ids', nargs='+', help='The id or the name of the product you want to work on.')
+    parser.add_argument('-po', '--percent_off', type=int, default=100, help='Percentage to apply off the product when creating coupon codes')
 
     args = parser.parse_args()
     mode = [member for member in Modes if args.mode == member.value][0]
@@ -178,7 +179,7 @@ def get_csv_file_as_list(path, header=False):
     return
 
 
-def batch_create_coupons(codes_list, product_id):
+def batch_create_coupons(codes_list, product_id, percent_off=100):
     """
     Take a list of coupon codes and sends post requests to create them on the Gumroad API,
     for the given product_id
@@ -193,7 +194,7 @@ def batch_create_coupons(codes_list, product_id):
     for line in codes_list:
         if line == '':
             continue
-        url, data = create_coupon_request(product_id, line, '100')
+        url, data = create_coupon_request(product_id, line, str(percent_off))
         r = requests.post(url, data)
         if r.ok:
             created_codes.append(line)
@@ -220,7 +221,7 @@ if not access_token:
         sys.exit()
     access_token = args.access_token
 
-def get_product_product_ids(ids):
+def get_product_info(ids, key='id'):
     """
     Searches the product in the list by id or by name
     Returns None if it can't find the product
@@ -228,11 +229,16 @@ def get_product_product_ids(ids):
     if type(ids) is str:
         ids = [ids]
 
+    VALID_KEYS = ['id', 'name', 'url']
+    if key not in VALID_KEYS:
+        logging.warning('Wrong key, key must be one of the following: {!s}'.format(VALID_KEYS))
+        return None
+
     product_ids = []
     for product in products:
         for string in ids:
             if string.rstrip() == product['name'] or string == product['id']:
-                product_ids.append(product['id'])
+                product_ids.append(product[key])
     return product_ids if product_ids else None
 
 
@@ -241,18 +247,19 @@ def get_product_product_ids(ids):
 product_ids = None
 if mode is Modes.POST:
     if args.product_ids:
-        product_ids = get_product_product_ids(args.product_ids)
+        product_ids = get_product_info(args.product_ids)
         if product_ids is None:
             print("Couldn't find the product id or name.")
     else:
         print('No valid product id or name passed with the --product_ids option.')
     while product_ids is None:
         user_input = input('Please enter a valid product name or id (list above): ')
-        product_ids = get_product_product_ids(user_input)
+        product_ids = get_product_info(user_input)
 
 
 if mode is Modes.POST and option is GumroadOptions.COUPONS:
     coupon_codes = []
+    percent_off = args.percent_off if args.percent_off else 100
     if args.csv:
         if not os.path.exists(args.csv):
             print('Could not find the csv file: the path does not exist. Operation aborted.')
@@ -263,7 +270,13 @@ if mode is Modes.POST and option is GumroadOptions.COUPONS:
         coupon_codes.append(args.coupon_codes)
 
     for p_id in product_ids:
-        batch_create_coupons(coupon_codes, p_id)
+        batch_create_coupons(coupon_codes, p_id, percent_off)
+
+    # Print coupon links
+    # if len(coupon_codes) == 1:
+    #     for p_id in product_ids:
+    #         coupon_url = get_product_info(p_id, key='url') + '/' + coupon_codes[0]
+    #         logging.log(coupon_url)
 
 if mode is Modes.GET and option is GumroadOptions.PRODUCTS:
     products, total_count = download_products_data()
