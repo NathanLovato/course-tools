@@ -94,7 +94,10 @@ def get_cli_arguments():
     parser.add_argument('-at', '--access_token', type=str, default='', help='Gumroad API access_token. You can find it in your account settings on gumroad.com')
     parser.add_argument('-cc', '--coupon_codes', nargs='+', help='One or more coupon codes to create. Separate them with spaces, e.g. coupon_one coupon_two')
     parser.add_argument('-ids', '--product_ids', nargs='+', help='The id or the name of the product you want to work on.')
-    parser.add_argument('-po', '--percent_off', type=int, default=100, help='Percentage to apply off the product when creating coupon codes')
+
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-po', '--percent_off', type=int, default=100, help='Percentage to apply off the product when creating coupon codes')
+    group.add_argument('-co', '--cents_off', type=int, default=0, help='Amount off the product list price in the currency\'s cents. E.g. a value of 500 means 5€/$ off')
 
     args = parser.parse_args()
     mode = [member for member in Modes if args.mode == member.value][0]
@@ -179,7 +182,7 @@ def get_csv_file_as_list(path, header=False):
     return
 
 
-def batch_create_coupons(codes_list, product_id, percent_off=100):
+def batch_create_coupons(codes_list, product_id, amount_off=100, offer_type='percent'):
     """
     Take a list of coupon codes and sends post requests to create them on the Gumroad API,
     for the given product_id
@@ -194,7 +197,7 @@ def batch_create_coupons(codes_list, product_id, percent_off=100):
     for line in codes_list:
         if line == '':
             continue
-        url, data = create_coupon_request(product_id, line, str(percent_off))
+        url, data = create_coupon_request(product_id, line, str(amount_off), offer_type)
         r = requests.post(url, data)
         if r.ok:
             created_codes.append(line)
@@ -259,7 +262,11 @@ if mode is Modes.POST:
 
 if mode is Modes.POST and option is GumroadOptions.COUPONS:
     coupon_codes = []
-    percent_off = args.percent_off if args.percent_off else 100
+    offer = {
+        'amount_off': args.cents_off if args.cents_off != 0 else args.percent_off,
+        'type': 'cents' if args.cents_off != 0 else 'percent'
+    }
+
     if args.csv:
         if not os.path.exists(args.csv):
             print('Could not find the csv file: the path does not exist. Operation aborted.')
@@ -270,7 +277,7 @@ if mode is Modes.POST and option is GumroadOptions.COUPONS:
         coupon_codes.append(args.coupon_codes)
 
     for p_id in product_ids:
-        batch_create_coupons(coupon_codes, p_id, percent_off)
+        batch_create_coupons(coupon_codes, p_id, offer['amount_off'], offer['type'])
 
     # Print coupon links
     # if len(coupon_codes) == 1:
