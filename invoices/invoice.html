@@ -31,23 +31,37 @@
                 Facture {{ invoice_number }}</br>
                 <small>{{ invoice_date }}</small>
             </h1>
-            <p>This example uses line-based positioning, to position the header and footer, stretching them across the grid.</p>
-            <table align="center">
+            <table id="products" align="center">
                 <tbody>
+                    <tr align="left">
+                        <th>Désignation</th>
+                        <th>Quantité</th>
+                        <th>PU HT</th>
+                        <th>Taux TVA</th>
+                        <th>Montant HT</th>
+                    </tr>
+                    {{ product_rows }}
                     <tr>
-                        <th align="left">Désignation</th>
-                        <th align="left">Quantité</th>
-                        <th align="center">PU HT</th>
-                        <th align="right">Taux TVA</th>
-                        <th align="right">Montant HT</th>
+                        <th colspan="4" align="left">Remise globale</th>
+                        <td align="right">{{ total_discount }}</td>
                     </tr>
                     <tr>
-                        <td align="left">Godot 3 course: Pro</td>
-                        <td align="center">1</td>
-                        <td align="right">20</td>
-                        <td align="right">0%</td>
-                        <td align="right">20</td>
+                        <td colspan="3"></td>
+                        <th>TOTAL HT</th>
+                        <td align="right">{{ total_excl_tax }}</td>
                     </tr>
+                    <tr>
+                        <td colspan="3"></td>
+                        <th>TOTAL TVA</th>
+                        <td align="right">{{ total_tax }}</td>
+                    </tr>
+                    <tr>
+                        <td></td>
+                        <td></td>
+                        <td></td>
+                        <th>TOTAL TTC</th>
+                        <td align="right">{{ total_incl_tax }}</td>
+                        </tr>
                 </tbody>
             </table>
         </article>
@@ -57,7 +71,8 @@
             <p>Escompte non admis, loi n92-1442 du 31/12/1992</p>
             <p>Passée la date d'échéance ci-dessus, une pénalité de retard de 3 fois le taux légal sera appliquée (Loi 2008-776 du 4 août 2008)</p>
             <p>Pour tout retard de paiement, une indemnité forfaitaire pour frais de recouvrement de 40 euros sera appliquée (Décret 2012-1115 du 2 octobre 2012)</p>
-            <p>Adhérent d'un centre de gestion agréé, acceptant à ce titre les règlements par chèque.</p>
+            {{ payment_details }}
+            <p align="center">Adhérent d'un centre de gestion agréé, acceptant à ce titre les règlements par chèque.</p>
         </footer>
     </body>
 </html>

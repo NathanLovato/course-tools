@@ -34,11 +34,12 @@ th {
 }
 
 .logo {
-    max-height: 40px;
+    max-width: 5cm;
+    max-height: 1cm;
 }
 
 .logo > img {
-    max-height: 40px;
+    max-width: inherit;
 }
 
 /* LAYOUT */
@@ -56,9 +57,8 @@ td {
     vertical-align: top;
 }
 
-table {
-    border-spacing: 20px;
-    padding: 20px;
+td, th {
+    padding: 10px;
 }
 
 header {
