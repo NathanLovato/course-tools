@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import json
 import subprocess
 import os
@@ -5,6 +6,9 @@ import shutil
 import csv
 import re
 import logging
+import locale
+import datetime
+import sys
 
 
 # TODO: payment details
@@ -12,10 +16,13 @@ DATABASE_PATH = '2017.csv'
 HTML_TEMPLATE_PATH = 'invoice.html'
 OUTPUT_FOLDER = 'dist'
 
+locale.setlocale(locale.LC_TIME, 'fr')
+DATE_FORMAT = '%d %B %Y'
+
 
 options = {
     'exclude_VAT': True,
-    'currency_symbol': '€',
+    'default_currency': 'EUR',
     'payment_date_delay': 60,
     'no_VAT': True
 }
@@ -43,6 +50,16 @@ with open('products.csv', 'r') as csv_file:
         product['unit_price'] = int(row[1])
         product['VAT_rate'] = int(row[2]) / 100
         product_database.append(product)
+
+
+def parse_invoice_date(date_string):
+    date, payment_date = None, None
+
+    # PayPal csv date format: mm/dd/yyyy
+    date = datetime.datetime.strptime(date_string, '%m/%d/%Y')
+    payment_date = date.now() + datetime.timedelta(days=options['payment_date_delay'])
+
+    return date, payment_date
 
 
 # PARSE HTML TEMPLATE
@@ -76,12 +93,6 @@ with open(HTML_TEMPLATE_PATH, 'r') as html_doc:
         logging.error('Missing {{ indentifier }} templates to replace in the html template. Aborting operation.')
 
 
-# TODO
-def parse_invoice_date(date):
-    date, payment_date = None, None
-
-    return date, payment_date
-
 
 def get_product_from_id(product_id):
     product = {}
@@ -99,7 +110,8 @@ def get_product_from_id(product_id):
     return product
 
 
-def convert_invoice_to_html(invoice_data, company, invoice_index):
+
+def convert_invoice_to_html(invoice_data, company):
     invoice_template_copy = list(invoice_template)
 
     # PRODUCT
@@ -119,6 +131,7 @@ def convert_invoice_to_html(invoice_data, company, invoice_index):
     total_tax_excl += product_cost_tax_excl
     total_VAT += product_VAT
 
+    # TODO: refactor invoice into object
     invoice_data['product']['name'] = product['name']
     invoice_data['product']['unit_price'] = product['unit_price']
     invoice_data['product']['VAT_rate'] = VAT_rate
@@ -133,27 +146,25 @@ def convert_invoice_to_html(invoice_data, company, invoice_index):
     # REPLACE VALUES
     for index, identifier in re_matches:
         string_template = '{{ ' + identifier + ' }}'
-
-        # TODO: remove all conditional statements
-        # use invoice_data[category][key] instead
-        date, payment_date = parse_invoice_date(invoice_data['date'])
-        if identifier == 'invoice_number':
-            replace_value = "{:04d}".format(invoice_index)
-        # TODO: parse date and format + calculate payment date
-        elif identifier == 'invoice_date':
-            replace_value = date
-        elif identifier == 'payment_date':
-            replace_value = payment_date
-        else:
-            category, key = identifier.split('_', maxsplit=1)
-            try:
-                replace_value = invoice_data[category][key]
-            except:
-                replace_value = identifier
-                logging.warning('Could not find matching value for {!s}'.format(identifier))
+        category, key = identifier.split('_', maxsplit=1)
+        try:
+            replace_value = invoice_data[category][key]
+        except:
+            replace_value = identifier
+            logging.warning('Could not find matching value for {!s}'.format(identifier))
+        if identifier in ['product_unit_price', 'product_total_tax_excl', 'total_discount', 'total_excl_tax', 'total_tax', 'total_incl_tax']:
+            replace_value = str(replace_value) + invoice_data['invoice']['currency']
         invoice_template_copy[index] = invoice_template_copy[index].replace(string_template, str(replace_value), 1)
     return invoice_template_copy
 
+
+
+def get_currency_symbol(currency):
+    currencies = {
+        'EUR': '€',
+        'USD': '$'
+    }
+    return currencies[currency]
 
 
 # prepare invoice data
@@ -161,22 +172,33 @@ invoices_database = []
 with open(DATABASE_PATH, 'r') as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=',')
     header = next(csv_reader)
-    for row in csv_reader:
-        # TODO: write functions to convert dates
+    for index, row in enumerate(csv_reader):
+        invoice_index = index + 1
+        date, payment_date = parse_invoice_date(row[0])
+        currency = row[1] if row[1] else options['default_currency']
         invoice_data = {
-            'date': row[0],
             'client': {
-                'name': row[3],
-                'country_code': row[4],
-                'VAT': row[5],
-                'address': row[6]
+                'name': row[4],
+                'country_code': row[5],
+                'VAT': row[6],
+                'address': row[7]
             },
             'product': {
-                'identifier': row[1],
-                'amount': row[2] if row[2] else 1
+                'identifier': row[2],
+                'amount': row[3] if row[3] else 1
+            },
+            'invoice': {
+                'number': "{:04d}".format(invoice_index),
+                'date': date.strftime(DATE_FORMAT),
+                'currency': get_currency_symbol(currency)
+            },
+            'payment': {
+                'date': payment_date.strftime(DATE_FORMAT),
+                'details': ''
             }
         }
         invoices_database.append(invoice_data)
+
 
 
 # GENERATE HTML FILES
@@ -193,16 +215,18 @@ img_output_path = os.path.join(html_export_path, 'img')
 if not os.path.exists(img_output_path):
     shutil.copytree('img', img_output_path)
 
-for index, invoice_data in enumerate( invoices_database ):
-    invoice_index = index + 1
-    invoice_as_html = convert_invoice_to_html(invoice_data, company, invoice_index)
+for invoice_data in invoices_database:
+    invoice_as_html = convert_invoice_to_html(invoice_data, company)
 
-    file_name = '{:04d}.html'.format(invoice_index)
+    # TODO: name invoices by date and place in folder per month?
+    # e.g. dist/.../yyyy/mm-dd-0001.html
+    file_name = '{}.html'.format(invoice_data['invoice']['number'])
+    print(file_name)
     file_path = '{}/{}'.format(html_export_path, file_name)
     with open(file_path, 'w') as invoice_file:
         invoice_file.writelines(invoice_as_html)
         html_file_names.append(file_name)
 
 # BUILD PDFs
-# for name in html_file_names:
-#     subprocess.run('wkhtmltopdf {}/{} {}/{}.pdf'.format(html_export_path, name, OUTPUT_FOLDER, name))
+for name in html_file_names:
+    subprocess.run('wkhtmltopdf {}/{} {}/{}.pdf'.format(html_export_path, name, OUTPUT_FOLDER, name))
