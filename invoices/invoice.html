@@ -40,7 +40,13 @@
                         <th>Taux TVA</th>
                         <th>Montant HT</th>
                     </tr>
-                    {{ product_rows }}
+                    <tr>
+                        <td align="left">{{ product_name }}</td>
+                        <td align="center">{{ product_amount }}</td>
+                        <td align="right">{{ product_unit_price }}</td>
+                        <td align="right">{{ product_VAT_rate }}</td>
+                        <td align="right">{{ product_total_tax_excl }}</td>
+                    </tr>
                     <tr>
                         <th colspan="4" align="left">Remise globale</th>
                         <td align="right">{{ total_discount }}</td>
