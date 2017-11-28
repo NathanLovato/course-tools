@@ -11,7 +11,6 @@ import datetime
 import sys
 
 
-# TODO: payment details
 DATABASE_PATH = '2017.csv'
 HTML_TEMPLATE_PATH = 'invoice.html'
 OUTPUT_FOLDER = 'dist'
@@ -24,33 +23,19 @@ options = {
     'exclude_VAT': True,
     'default_currency': 'EUR',
     'payment_date_delay': 60,
-    'no_VAT': True
+    'no_VAT': True,
+    'payment_options': {
+        'paypal': '',
+        'wire': ''
+    }
 }
-
 
 company = {
-    'name': 'Test',
-    'email': 'myemail@test.com',
-    'address': 'Test',
+    'name': 'Empty',
+    'email': 'empty@test.com',
+    'address': 'Empty',
     'VAT': '000000000'
 }
-
-# TODO: Load company from JSON
-
-product_database = []
-product_names = []
-with open('products.csv', 'r') as csv_file:
-    reader = csv.reader(csv_file)
-    header = next(reader)
-
-    product = {}
-    for row in reader:
-        product_names.append(row[0])
-        product['name'] = row[0]
-        product['unit_price'] = int(row[1])
-        product['VAT_rate'] = int(row[2]) / 100
-        product_database.append(product)
-
 
 def parse_invoice_date(date_string):
     date, payment_date = None, None
@@ -60,6 +45,7 @@ def parse_invoice_date(date_string):
     payment_date = date.now() + datetime.timedelta(days=options['payment_date_delay'])
 
     return date, payment_date
+
 
 
 # PARSE HTML TEMPLATE
@@ -83,14 +69,6 @@ def parse_html_template(html_doc):
         line_id += 1
 
     return invoice_template, re_matches
-
-
-with open(HTML_TEMPLATE_PATH, 'r') as html_doc:
-    invoice_template, re_matches = parse_html_template(html_doc)
-    if not invoice_template:
-        logging.error('Could not load the invoice template. Aborting operation.')
-    if not re_matches:
-        logging.error('Missing {{ indentifier }} templates to replace in the html template. Aborting operation.')
 
 
 
@@ -160,11 +138,64 @@ def convert_invoice_to_html(invoice_data, company):
 
 
 def get_currency_symbol(currency):
+    # USE HTML NAME CODES
     currencies = {
-        'EUR': '€',
-        'USD': '$'
+        'EUR': '&euro;',
+        'USD': '$',
+        'JPY': ''
     }
     return currencies[currency]
+
+
+
+def get_payment_details(option):
+    option_string = option.lower()
+    if not option_string in options['payment_options'].keys():
+        return ''
+    return options['payment_options'][option_string]
+
+
+# Parse options
+# TODO: move options and payment details to a JSON file
+# and parse the bank-details template like the invoice one
+try:
+    with open('config.json') as json_doc:
+        config = json.loads(json_doc.read())
+        options['payment_options']['paypal'] = 'PayPal address: ' + config['paypal']
+
+        company['name'] = config['company']['name']
+        company['email'] = config['company']['email']
+        company['address'] = config['company']['address']
+        company['VAT'] = config['company']['VAT']
+except FileNotFoundError:
+    logging.warning('Missing config.json file. Invoices will use default options.')
+
+with open('bank-details.html') as html_doc:
+    options['payment_options']['wire'] = html_doc.read()
+
+
+# Parse product database
+product_database = []
+product_names = []
+with open('products.csv', 'r') as csv_file:
+    reader = csv.reader(csv_file)
+    header = next(reader)
+
+    product = {}
+    for row in reader:
+        product_names.append(row[0])
+        product['name'] = row[0]
+        product['unit_price'] = int(row[1])
+        product['VAT_rate'] = int(row[2]) / 100
+        product_database.append(product)
+
+
+with open(HTML_TEMPLATE_PATH, 'r') as html_doc:
+    invoice_template, re_matches = parse_html_template(html_doc)
+    if not invoice_template:
+        logging.error('Could not load the invoice template. Aborting operation.')
+    if not re_matches:
+        logging.error('Missing {{ indentifier }} templates to replace in the html template. Aborting operation.')
 
 
 # prepare invoice data
@@ -172,6 +203,8 @@ invoices_database = []
 with open(DATABASE_PATH, 'r') as csv_file:
     csv_reader = csv.reader(csv_file, delimiter=',')
     header = next(csv_reader)
+
+    # TODO: Convert to dict, it's not readable
     for index, row in enumerate(csv_reader):
         invoice_index = index + 1
         date, payment_date = parse_invoice_date(row[0])
@@ -194,14 +227,14 @@ with open(DATABASE_PATH, 'r') as csv_file:
             },
             'payment': {
                 'date': payment_date.strftime(DATE_FORMAT),
-                'details': ''
+                'details': get_payment_details(row[8])
             }
         }
         invoices_database.append(invoice_data)
 
 
 
-# GENERATE HTML FILES
+# HTML FILES
 html_file_names = []
 html_export_path = '{!s}/html'.format(OUTPUT_FOLDER)
 
@@ -215,6 +248,7 @@ img_output_path = os.path.join(html_export_path, 'img')
 if not os.path.exists(img_output_path):
     shutil.copytree('img', img_output_path)
 
+# Generate html files
 for invoice_data in invoices_database:
     invoice_as_html = convert_invoice_to_html(invoice_data, company)
 
