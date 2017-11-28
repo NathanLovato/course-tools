@@ -1,3 +1,4 @@
-date,currency,product,amount,client,country,VAT,address
-11/10/2017,,0,,Bernard Jaja,FR,,"10 rue de la joutière, 78284 Pont-la-cheville, France"
-11/12/2017,USD,1,,Lolilol,DE,111222333,Somewhere
+date,currency,product,amount,client,country,VAT,address,payment
+11/10/2017,,0,,Bernard Jaja,FR,,"10 rue de la joutière, 78284 Pont-la-cheville, France",wire
+11/12/2017,USD,1,,Lolilol,DE,111222333,Somewhere,paypal
+11/12/2017,USD,1,,Test1,DE,111222333,Somewhere,

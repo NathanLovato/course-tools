@@ -34,6 +34,7 @@ company = {
     'name': 'Empty',
     'email': 'empty@test.com',
     'address': 'Empty',
+    'number': '000000000',
     'VAT': '000000000'
 }
 
@@ -161,12 +162,9 @@ def get_payment_details(option):
 try:
     with open('config.json') as json_doc:
         config = json.loads(json_doc.read())
+        company = config['company']
         options['payment_options']['paypal'] = 'PayPal address: ' + config['paypal']
 
-        company['name'] = config['company']['name']
-        company['email'] = config['company']['email']
-        company['address'] = config['company']['address']
-        company['VAT'] = config['company']['VAT']
 except FileNotFoundError:
     logging.warning('Missing config.json file. Invoices will use default options.')
 
