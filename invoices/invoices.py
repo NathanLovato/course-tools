@@ -15,7 +15,7 @@ DATABASE_PATH = '2017.csv'
 HTML_TEMPLATE_PATH = 'invoice.html'
 OUTPUT_FOLDER = 'dist'
 
-locale.setlocale(locale.LC_TIME, 'fr')
+# locale.setlocale(locale.LC_TIME, 'en_us')
 DATE_FORMAT = '%d %B %Y'
 
 
@@ -43,7 +43,7 @@ def parse_invoice_date(date_string):
 
     # PayPal csv date format: mm/dd/yyyy
     date = datetime.datetime.strptime(date_string, '%m/%d/%Y')
-    payment_date = date.now() + datetime.timedelta(days=options['payment_date_delay'])
+    payment_date = date + datetime.timedelta(days=options['payment_date_delay'])
 
     return date, payment_date
 
@@ -100,8 +100,15 @@ def convert_invoice_to_html(invoice_data, company):
     total_tax_excl, total_VAT = 0, 0
 
     product_data = invoice_data['product']
-    amount = product_data['amount']
+    amount = invoice_data['product']['amount']
     product = get_product_from_id(product_data['identifier'])
+    if not product:
+        product = {
+            'name': invoice_data['product']['identifier'],
+            'VAT_rate': 0,
+            'unit_price': float(invoice_data['product']['price'].replace(',', '.'))
+        }
+
 
     VAT_rate = 0 if options['no_VAT'] == True else product['VAT_rate']
     product_cost_tax_excl = product['unit_price'] * amount
@@ -183,8 +190,8 @@ with open('products.csv', 'r') as csv_file:
     for row in reader:
         product_names.append(row[0])
         product['name'] = row[0]
-        product['unit_price'] = int(row[1])
-        product['VAT_rate'] = int(row[2]) / 100
+        product['unit_price'] = float(row[1])
+        product['VAT_rate'] = float(row[2]) / 100
         product_database.append(product)
 
 
@@ -216,7 +223,8 @@ with open(DATABASE_PATH, 'r') as csv_file:
             },
             'product': {
                 'identifier': row[2],
-                'amount': row[3] if row[3] else 1
+                'price': row[3],
+                'amount': 1
             },
             'invoice': {
                 'number': "{:04d}".format(invoice_index),
