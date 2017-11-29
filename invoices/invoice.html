@@ -23,13 +23,13 @@
             <address id="client">
                 {{ client_name }}</br>
                 {{ client_address }}</br>
-                {{ client_VAT }}
+                {{ client_VAT_number }}
             </address>
         </header>
         <div class="clearfix"></div>
         <article class="column">
             <h1 align="center">
-                Facture {{ invoice_number }}</br>
+                Facture {{ invoice_index }}</br>
                 <small>{{ invoice_date }}</small>
             </h1>
             <table id="products" align="center">
@@ -43,7 +43,7 @@
                     </tr>
                     <tr>
                         <td align="left">{{ product_name }}</td>
-                        <td align="center">{{ product_amount }}</td>
+                        <td align="center">{{ product_quantity }}</td>
                         <td align="right">{{ product_unit_price }}</td>
                         <td align="right">{{ product_VAT_rate }}</td>
                         <td align="right">{{ product_total_tax_excl }}</td>
