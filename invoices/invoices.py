@@ -19,6 +19,7 @@ OUTPUT_FOLDER = 'dist'
 locale.setlocale(locale.LC_TIME, 'fr')
 DATE_FORMAT = '%d %B %Y'
 
+DEBUG = False
 
 options = {
     'exclude_VAT': True,
@@ -28,6 +29,9 @@ options = {
     'payment_options': {
         'paypal': '',
         'wire': ''
+    },
+    'debug': {
+        'csv_max_parsed_rows': 5
     }
 }
 
@@ -47,7 +51,7 @@ class Invoice:
     def __init__(self, html_template, index, client, product, date_string, currency, payment_option):
         self.html_template = html_template
         self.template_copy = self.html_template.get_copy()
-        self.invoice_date, self.payment_date = parse_date(date_string)
+        self.invoice_date, self.payment_date = self.parse_date(date_string)
         self.index = index
         self.data = {
             'client': {
@@ -186,7 +190,7 @@ def parse_invoice_date(date_string):
     date, payment_date = None, None
 
     # PayPal csv date format: mm/dd/yyyy
-    date = datetime.datetime.strptime(date_string, '%m/%d/%Y').replace()
+    date = datetime.datetime.strptime(date_string, '%m/%d/%Y')
     payment_date = date + datetime.timedelta(days=options['payment_date_delay'])
 
     return date, payment_date
@@ -347,45 +351,54 @@ with codecs.open(HTML_TEMPLATE_PATH, 'r', encoding='utf-8') as html_doc:
 
 
 # prepare invoice data
-invoices_database = []
-with codecs.open(DATABASE_PATH, 'r', encoding='utf-8') as csv_file:
-    csv_reader = csv.reader(csv_file, delimiter=',')
-    header = next(csv_reader)
+def prepare_invoice_data():
+    db = []
+    with codecs.open(DATABASE_PATH, 'r', encoding='utf-8') as csv_file:
+        csv_reader = csv.reader(csv_file, delimiter=',')
+        header = next(csv_reader)
 
-    # TODO: Convert to dict, it's not readable
-    for index, row in enumerate(csv_reader):
-        invoice_index = index + 1
-        date, payment_date = parse_invoice_date(row[0])
-        currency = row[1] if row[1] else options['default_currency']
-        invoice_data = {
-            'client': {
-                'name': row[4],
-                'country_code': row[5],
-                'VAT_number': row[6],
-                'address': row[7]
-            },
-            'product': {
-                'identifier': row[2],
-                'price': row[3],
-                'quantity': 1
-            },
-            'invoice': {
-                'index': "{:04d}".format(invoice_index),
-                'date': date.strftime(DATE_FORMAT),
-                'currency': get_currency_symbol(currency)
-            },
-            'payment': {
-                'date': payment_date.strftime(DATE_FORMAT),
-                'details': get_payment_details(row[8])
+        # TODO: Convert to dict, it's not readable
+        for index, row in enumerate(csv_reader):
+            invoice_index = index + 1
+            date, payment_date = parse_invoice_date(row[0])
+            currency = row[1] if row[1] else options['default_currency']
+            invoice_data = {
+                'client': {
+                    'name': row[4],
+                    'country_code': row[5],
+                    'VAT_number': row[6],
+                    'address': row[7]
+                },
+                'product': {
+                    'identifier': row[2],
+                    'price': row[3],
+                    'quantity': 1
+                },
+                'invoice': {
+                    'index': "{:04d}".format(invoice_index),
+                    'date': date.strftime(DATE_FORMAT),
+                    'currency': get_currency_symbol(currency)
+                },
+                'payment': {
+                    'date': payment_date.strftime(DATE_FORMAT),
+                    'details': get_payment_details(row[8])
+                }
             }
-        }
-        invoices_database.append(invoice_data)
+            db.append(invoice_data)
+            if DEBUG and invoice_index >= options['debug']['csv_max_parsed_rows']:
+                break
+    return db
 
 
+# SCRIPT
+invoices_database = prepare_invoice_data()
 
 # HTML FILES
-html_file_names = []
-html_export_path = '{!s}/html'.format(OUTPUT_FOLDER)
+html_export_paths = []
+
+db_file_name, _ = os.path.splitext(DATABASE_PATH)
+html_export_path = '{}/{}/html'.format(OUTPUT_FOLDER, db_file_name)
+
 
 # Create directories and copy files
 if not os.path.exists(html_export_path):
@@ -398,18 +411,21 @@ if not os.path.exists(img_output_path):
     shutil.copytree('img', img_output_path)
 
 # Generate html files
-for invoice_data in invoices_database:
-    invoice_as_html = convert_invoice_to_html(invoice_data, company)
+for invoice in invoices_database:
+    invoice_as_html = convert_invoice_to_html(invoice, company)
 
-    # TODO: name invoices by date and place in folder per month?
-    # e.g. dist/.../yyyy/mm-dd-0001.html
-    file_name = '{}.html'.format(invoice_data['invoice']['index'])
-    print(file_name)
-    file_path = '{}/{}'.format(html_export_path, file_name)
-    with codecs.open(file_path, 'w', encoding='utf-8') as invoice_file:
+    export_date = datetime.datetime.strptime(invoice['invoice']['date'], DATE_FORMAT)
+    export_date_string = export_date.strftime('%Y-%m-%d')
+    client_name = invoice['client']['name'].replace(' ', '-').lower()
+
+    file_name = '{}-{}.html'.format(invoice['invoice']['index'], client_name)
+    export_path = '{}/{}-{}'.format(html_export_path, export_date_string, file_name)
+
+    html_export_paths.append(export_path)
+
+    with codecs.open(export_path, 'w', encoding='utf-8') as invoice_file:
         invoice_file.writelines(invoice_as_html)
-        html_file_names.append(file_name)
 
-# BUILD PDFs
-# for name in html_file_names:
-#     subprocess.run('wkhtmltopdf {}/{} {}/{}.pdf'.format(html_export_path, name, OUTPUT_FOLDER, name))
+# Build PDFs
+for path in html_export_paths:
+    subprocess.run('wkhtmltopdf {} {}.pdf'.format(path, os.path.splitext(path)[0].replace('html/', '')))
