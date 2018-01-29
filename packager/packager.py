@@ -9,13 +9,12 @@ Possible improvements:
 
 import os
 import subprocess
-import shutil
-import stat
 import re
 import sys
+import json
+from enum import Enum
+from utils.copy_file_tree import copy_file_tree
 
-# TODO: Use objects
-# TODO: Use fixed folder structure https://github.com/GDquest/course-tools/issues/9
 # TODO: Move settings to JSON
 # TODO: Externalize utils (see https://github.com/GDquest/Blender-power-sequencer/)
 # TODO: Store file timestamps in JSON objects
@@ -29,9 +28,21 @@ COURSE_FOLDER = 'course'
 EXERCISE_FOLDER = 'exercises'
 DEMO_FOLDER = 'demo'
 
-debug = False
-debug_processed_chapters = 0
-debug_chapters_process_count = 100
+settings = {
+    "case_ignore": True,
+    "folders": {
+        "content": "content",
+        "exercises": "exercises",
+        "static": "static"
+    }
+}
+
+info = {
+    "processed_chapters": 0,
+    "current_step": 0,
+}
+
+debug = True
 
 
 def print_debug(*args):
@@ -39,33 +50,6 @@ def print_debug(*args):
         return
     for arg in args:
         print(arg)
-
-
-def copy_file_tree(src, dst, symlinks=False, ignore=None):
-    if not os.path.exists(dst):
-        os.makedirs(dst)
-        shutil.copystat(src, dst)
-    lst = os.listdir(src)
-    if ignore:
-        excl = ignore(src, lst)
-        lst = [x for x in lst if x not in excl]
-    for item in lst:
-        s = os.path.join(src, item)
-        d = os.path.join(dst, item)
-        if symlinks and os.path.islink(s):
-            if os.path.lexists(d):
-                os.remove(d)
-            os.symlink(os.readlink(s), d)
-            try:
-                st = os.lstat(s)
-                mode = stat.S_IMODE(st.st_mode)
-                os.lchmod(d, mode)
-            except:
-                pass  # lchmod not available
-        elif os.path.isdir(s):
-            copy_file_tree(s, d, symlinks, ignore)
-        else:
-            shutil.copy2(s, d)
 
 
 def get_project_path():
@@ -83,118 +67,142 @@ def get_project_path():
     return path
 
 
-path = get_project_path()
-# Find modules, dict with the form { name: abspath }
-modules = {folder: os.path.join(path, folder) for folder in os.listdir(path)
-           if not re.match(RE_IGNORED_FOLDERS, folder) and os.path.isdir(os.path.join(path, folder))}
-if not modules:
-    print('The folder is empty, Packager will now exit')
-    sys.exit()
-print('{!s} Modules found: {!s}'.format(len(modules.keys()), modules.keys()))
+class Folders(Enum):
+    """Folder names to use as paths"""
+    CONTENT = settings['folders']['content']
+    EXERCISES = settings['folders']['exercises']
+    STATIC = settings['folders']['static']
 
 
-def find_course_files(path):
-    """
-    Finds .md files and corresponding folders named 'img'
-    Returns two lists: markdown_files and img_folders
-    """
-    markdown_files, img_folders = [], [],
-    files_to_copy, folders_to_copy = [], []
-    for dirpath, dirnames, filenames in os.walk(path):
-        # skip ignored folders
-        dirnames[:] = [
-            d for d in dirnames if not re.match(RE_IGNORED_FOLDERS, d)
-        ]
-        current_folder = os.path.split(dirpath)[1]
-        if re.match(RE_IGNORED_FOLDERS, current_folder):
-            continue
+class FolderProcessor:
+    """Finds files and folder paths to feed the CourseDatabase"""
+    def __init__(self, project_folder):
+        self.project_folder = project_folder
+        self.project_chapters = [f for f in os.listdir(self.project_folder) if not re.match(RE_IGNORED_FOLDERS, f)]
 
-        new_markdown_files = [
-            os.path.join(dirpath, f) for f in filenames if f.endswith('.md')
-        ]
-        markdown_files.extend(new_markdown_files)
-        if new_markdown_files:
-            img_folders.extend([
-                os.path.join(dirpath, folder) for folder in dirnames
-                if folder == 'img'
-            ])
+    def find_project_files(self):
+        """Finds everything"""
+        project_files = []
+        for chapter_name in self.project_chapters:
+            data = {}
+            chapter_path = os.path.join(self.project_folder, chapter_name)
 
-        files_to_copy.extend([
-            os.path.join(dirpath, f) for f in filenames
-            if not f.endswith('.md')
-        ])
-        folders_to_copy.extend([os.path.join(dirpath, folder) for folder in filenames
-                                if not re.match(RE_IGNORED_FOLDERS, folder) and not folder == 'img'])
+            data['content'] = self._find_content(os.path.join(chapter_path, Folders.CONTENT.value), True)
+            data['exercises'] = self._find_content(os.path.join(chapter_path, Folders.EXERCISES.value))
+            static_path = os.path.join(chapter_path, Folders.STATIC.value)
+            if os.path.isdir(static_path):
+                data['static'] = Folders.STATIC.value
 
-    return markdown_files, img_folders, files_to_copy, folders_to_copy
+            chapter_data = {chapter_name: data}
+            project_files.append(chapter_data)
+        return project_files
+
+    def _find_content(self, folder_path, find_static_files=False):
+        """
+        Finds all markdown files to build and copy
+        """
+        found = {
+            'markdown': [],
+            'img': [],
+            'static': []
+        }
+        for root, dirs, files in os.walk(folder_path):
+            dirs[:] = [d for d in dirs if not re.match(RE_IGNORED_FOLDERS, d)]
+
+            folder_relpath = os.path.relpath(root, start=folder_path)
+            found_markdown = [os.path.join(folder_relpath, f) for f in files if f.endswith('.md')]
+
+            #TODO: refactor to have file: {timestamp: ..., abspath?}
+            found['img'].extend([os.path.join(folder_relpath, folder) for folder in dirs if folder == 'img'])
+            found['markdown'].extend(found_markdown)
+            found['static'].extend([os.path.join(folder_relpath, f) for f in dirs if f != 'img'])
+
+            if find_static_files:
+                found['static'].extend([os.path.join(folder_relpath, f) for f in files if not f.endswith('.md')])
+        return found
+
+    def _get_timestamp(file_path):
+        try:
+            timestamp = os.path.getmtime(file_path)
+        except OSError:
+            timestamp = 0.0
+            print("Couldn't get timestamp for %s".format(file_path))
+        return timestamp
 
 
-# Find all markdown files to build and folders to copy to _dist
-file_paths = {}
-MARKDOWN_FILES, FOLDERS_TO_COPY = 'markdown', 'to_copy'
-for module_name in modules.keys():
-    file_paths[module_name] = {}
-    module_path = modules[module_name]
-    for folder in os.listdir(module_path):
-        if re.match(RE_IGNORED_FOLDERS, folder):
-            continue
-        file_paths[module_name][folder] = {}
-        md_files, img_folders, files_to_copy, folders_to_copy = find_course_files(
-            os.path.join(module_path, folder))
-        file_paths[module_name][folder][MARKDOWN_FILES] = md_files
-        file_paths[module_name][folder][FOLDERS_TO_COPY] = img_folders
-        # print(files_to_copy)
-        # print(folders_to_copy)
-        # print('\n')
+class CourseDatabase:
+    def __init__(self):
+        self.chapters = []
+        self.changes = []
 
-    print_debug('\n', folder)
-    print_debug('\n', file_paths[module_name])
-    if debug:
-        debug_processed_chapters += 1
-        if debug_processed_chapters >= debug_chapters_process_count:
-            break
+    def update(self, files_dict):
+        """
+        Rebuild the database from a files dictionary
+        Use FolderProcessor to find files and get the source files_dict
+        Stamps the files and stores their paths
+        Stores it in self.data
+        """
 
-# BUILD AND MOVE FILES WITH PANDOC
-# Go down modules, then folders, and in each folder there's MARKDOWN_FILES
-folders_to_create = []
-dist_folder = os.path.join(path, '_dist')
-pandoc_build_commands = []
+        # take the FolderProcessor's result and compare it to the current DB
 
-css_file_name = 'pandoc.css'
-for module_name in file_paths.keys():
-    module_dist_path = os.path.join(dist_folder, module_name)
+    def write_changelog():
+        pass
 
-    for folder in file_paths[module_name].keys():
-        folder_path = os.path.join(module_dist_path, folder)
-        folders_to_create.append(folder_path)
+    def load_from(file_path):
+        """Loads the database from a JSON file"""
+        with open(file_path) as data:
+            self.chapters = json.loads(data.read())
 
-        markdown_files = file_paths[module_name][folder][MARKDOWN_FILES]
-        for f in markdown_files:
-            markdown_folder_path, file_name = os.path.split(f)
-            name = os.path.splitext(file_name)[0]
-            export_file_name = name + '.html'
 
-            dist_path = os.path.join(folder_path, export_file_name)
-            pandoc_build_commands.append([
-                'pandoc', f, '-t', 'html5', '--css', css_file_name, '-o',
-                dist_path
-            ])
+project_path = get_project_path()
+processor = FolderProcessor(project_path)
+files = processor.find_project_files()
+data_json = json.dumps(files, indent=2)
+print(data_json)
+sys.exit()
 
-        to_copy = file_paths[module_name][folder][FOLDERS_TO_COPY]
-        for copy_file_path in to_copy:
-            copy_file_tree(copy_file_path,
-                           os.path.join(module_dist_path, 'course', 'img'))
-            print_debug(copy_file_path)
+def build():
+    # BUILD AND MOVE FILES WITH PANDOC
+    # Go down chapters, then folders, and in each folder there's MARKDOWN_FILES
+    folders_to_create = []
+    dist_folder = os.path.join(project_path, '_dist')
+    pandoc_build_commands = []
 
-print_debug(pandoc_build_commands[0])
+    css_file_name = 'pandoc.css'
+    for module_name in file_paths.keys():
+        module_dist_path = os.path.join(dist_folder, module_name)
 
-# Create folders
-for folder_path in folders_to_create:
-    if not os.path.exists(folder_path):
-        os.makedirs(folder_path)
+        for folder in file_paths[module_name].keys():
+            folder_path = os.path.join(module_dist_path, folder)
+            folders_to_create.append(folder_path)
 
-for command in pandoc_build_commands:
-    subprocess.run(command)
+            markdown_files = file_paths[module_name][folder][MARKDOWN_FILES]
+            for f in markdown_files:
+                markdown_folder_path, file_name = os.path.split(f)
+                name = os.path.splitext(file_name)[0]
+                export_file_name = name + '.html'
+
+                dist_path = os.path.join(folder_path, export_file_name)
+                pandoc_build_commands.append([
+                    'pandoc', f, '-t', 'html5', '--css', css_file_name, '-o',
+                    dist_path
+                ])
+
+            to_copy = file_paths[module_name][folder][FOLDERS_TO_COPY]
+            for copy_file_path in to_copy:
+                copy_file_tree(copy_file_path,
+                               os.path.join(module_dist_path, 'course', 'img'))
+                print_debug(copy_file_path)
+
+    print_debug(pandoc_build_commands[0])
+
+    # Create folders
+    for folder_path in folders_to_create:
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+    for command in pandoc_build_commands:
+        subprocess.run(command)
 
 # TODO: copy css file once per course folder
 # css_file_path = os.path.join(path, css_file_name)
@@ -210,8 +218,3 @@ for command in pandoc_build_commands:
 
 # TODO: For folders in _dist, if folder changed, auto ZIP
 # def has_changed_since_last_build(file_path):
-
-# TODO: changelog
-# Store build date
-# Print all changes to a file -> changelog
-# Separate changed and new things
