@@ -36,11 +36,12 @@ options = {
 }
 
 company = {
-    'name': 'Empty',
-    'email': 'empty@test.com',
-    'address': 'Empty',
-    'number': '000000000',
-    'VAT': '000000000'
+    "name": "Lovato Nathan",
+    "email": "nathan@gdquest.com",
+    "address": "81 Place de la Mairie, 74550 Perrignier",
+    "number": "80104763000026",
+    "VAT": "FR09801047630",
+    "paypal": "nathan@gdquest.com"
 }
 
 
@@ -190,7 +191,7 @@ def parse_invoice_date(date_string):
     date, payment_date = None, None
 
     # PayPal csv date format: mm/dd/yyyy
-    date = datetime.datetime.strptime(date_string, '%m/%d/%Y')
+    date = datetime.datetime.strptime(date_string, '%d/%m/%Y')
     payment_date = date + datetime.timedelta(days=options['payment_date_delay'])
 
     return date, payment_date

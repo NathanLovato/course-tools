@@ -1,0 +1,30 @@
+{
+    "config": {
+        "database_path": "C:/Users/GDquest/Dropbox/Files/2018/company/1.factures/invoice_data.csv",
+        "html_template_path": "invoice.html",
+        "output_path": "dist",
+        "locale": "fr",
+        "date_format": "%d %B %Y"
+    },
+    "settings": {
+        "exclude_VAT": true,
+        "default_currency": "EUR",
+        "payment_date_delay": 60,
+        "no_VAT": true,
+        "payment_options": {
+            "paypal": "",
+            "wire": ""
+        },
+        "debug": {
+            "csv_max_parsed_rows": 5
+        }
+    },
+    "company": {
+        "name": "Lovato Nathan",
+        "email": "nathan@gdquest.com",
+        "address": "81 Place de la Mairie, 74550 Perrignier",
+        "id": "80104763000026",
+        "VAT": "FR09801047630",
+        "paypal": "nathan@gdquest.com"
+    }
+}
